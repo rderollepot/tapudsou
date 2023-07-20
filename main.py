@@ -1,4 +1,4 @@
-import ctypes
+from tkinter.messagebox import showinfo
 import argparse
 import webbrowser
 
@@ -6,8 +6,8 @@ import requests
 import keyring
 
 
-def message_box(title, text, style):
-    return ctypes.windll.user32.MessageBoxW(0, text, title, style)
+def message_box(title, text):
+    return showinfo(title, text)
 
 
 def main():
@@ -18,7 +18,7 @@ def main():
     pwd = keyring.get_password("tapudsou", args.username)
 
     if not pwd:
-        message_box("Tapudsou", f"Impossible de trouver le mot de passe", 0)
+        message_box("Tapudsou", f"Impossible de trouver le mot de passe")
         return
 
     headers = {
@@ -43,7 +43,7 @@ def main():
         balance = float(balance) / 100.
 
         if balance < args.threshold:
-            message_box("Tapudsou", f"Il reste {balance}€ sur ta carte de cantine!", 0)
+            message_box("Tapudsou", f"Il reste {balance}€ sur ta carte de cantine!")
             webbrowser.open_new_tab("https://ewallet.innovorder.fr/1249/home")
 
 
