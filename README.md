@@ -4,7 +4,8 @@ Python script that tells you when you need to add money to your lunch card.
 
 ## Installation
 
-You need to add your credentials to the Windows Credential Locker, under the `tapudsou` identifier.
+You need to add your credentials under the `tapudsou` identifier to your system specific credential manager.
+Refer to the `keyring` [documentation](https://github.com/jaraco/keyring) for that part.
 
 ## Usage
 
