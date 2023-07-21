@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>local.tapudsou</string>
+
+    <key>Program</key>
+    <string>$FULLPATH_TO_TAPUDSOU_SH</string>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>$MY_HOUR</integer>
+        <key>Minute</key>
+        <integer>$MY_MINUTE</integer>
+    </dict>
+</dict>
+</plist>
