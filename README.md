@@ -1,60 +1,104 @@
 # Tapudsou
 
-Python script that tells you when you need to add money to your lunch card.
+**Tapudsou** is a lightweight utility designed to automatically monitor your Innovorder (Dupont Restauration) lunch card balance and alert you when a top-up is required.
 
-## Installation
+## 1. Prerequisites
 
-You need to add your credentials under the `tapudsou` identifier to your system specific credential manager.
-Refer to the `keyring` [documentation](https://github.com/jaraco/keyring) for that part, or use the script `add_credentials.py`.
+Before proceeding, ensure the following requirements are met :
 
-## Setup daily automatic launch
+* **Python 3** : This script assumes `python3` is already installed on your system.
+* **Account Activation** : You must have an active account on the Innovorder platform. Instructions provided by [Dupont Restauration](instructions.jpg) are summarized below.
+  * **Portal** : [https://ewallet.innovorder.fr/1249/home](https://ewallet.innovorder.fr/1249/home).
+  * **First Login** : Use `firstname.lastname@ara.fr` with the temporary password `12345`.
+  * **Setup** : Follow the prompts to set your definitive email and personal password.
 
-### On MacOS, using `launchd`
 
-The following commands suppose you are sitting inside the project directory.
 
-1. Change `$FULLPATH_TO_TAPUDSOU`, `$USERNAME` and `$THRESHOLD` in `tapudsou.sh` with your settings
-1. Change `$FULLPATH_TO_TAPUDSOU_SH`, `$MY_HOUR` and `$MY_MINUTE` in `local.tapudsou.plist` with your settings
-2. Add user execution permission to the shell script:
-```console:
-chmod 755 ./tapudsou.sh
+---
+
+## 2. Intent and Security
+
+The script follows a "set and forget" philosophy :
+
+* **Automated Monitoring** : It runs daily at a scheduled time via a system agent (`launchd` on macOS).
+* **State-of-the-art Security** : Your password is **never stored in plain text**. The script utilizes the `keyring` library to delegate secret storage to your OS-native secure vault (macOS Keychain).
+* **Intelligent Alerts** : It fetches your exact balance from the Innovorder API. If it falls below your chosen threshold, the script triggers a system notification and opens the recharge portal in your browser.
+
+---
+
+## 3. Installation
+
+Follow these steps to set up the automation on your machine :
+
+1. **Clone the repository** :
+```bash
+git clone git@github.com:rderollepot/tapudsou.git
+cd tapudsou
+git checkout macos_launchd
+
 ```
-3. Move `local.tapudsou.plist` to `~/Library/LaunchAgents`:
-```console:
-mv ./local.tapudsou.plist ~/Library/LaunchAgents/local.tapudsou.plist
-```
-4. Load agent:
-```console:
-launchctl load ~/Library/LaunchAgents/local.tapudsou.plist
-```
 
-#### Tips
 
-- You can check that your agent has been properly loaded using:
-```console:
-launchctl list | grep local.tapudsou
+2. **Run the automated setup** :
+```bash
+python3 setup.py
+
 ```
 
-- Once loaded, you can execute your agent immediately using:
-```console:
+
+3. **Configuration** :
+The installer will prompt you for :
+  * Your Innovorder email and password.
+  * The balance threshold in € (e.g., `15.0`).
+  * The preferred daily execution time (Hour/Minute).
+
+
+
+The `setup.py` script automatically creates a virtual environment, installs dependencies, secures your credentials, and registers the macOS background agent.
+
+---
+
+## 4. Manual Testing and Logs
+
+To verify the installation or debug issues without waiting for the next scheduled run :
+
+* **Trigger the agent immediately** :
+```bash
 launchctl start local.tapudsou
+
 ```
 
-- If you make changes to `local.tapudsou.plist`, you need to reload it or they will not be applied:
-```console:
+
+* **Check Execution Logs** :
+If the script does not seem to trigger, consult the logs in the project directory :
+  * `tapudsou.log` : Standard output of the script.
+  * `tapudsou.err` : Detailed error messages (e.g., network issues or credential errors).
+
+
+
+---
+
+## 5. Uninstallation
+
+To completely remove the script and its associated data from your system :
+
+1. **Remove the scheduler** :
+```bash
 launchctl unload ~/Library/LaunchAgents/local.tapudsou.plist
-launchctl load ~/Library/LaunchAgents/local.tapudsou.plist
-```
-
-## Usage
+rm ~/Library/LaunchAgents/local.tapudsou.plist
 
 ```
-usage: main.py [-h] username threshold
 
-positional arguments:
-  username
-  threshold   Account balance in € below which to alert
 
-options:
-  -h, --help  show this help message and exit
+2. **Clear stored credentials** :
+```bash
+security delete-generic-password -s "tapudsou"
+
+```
+
+
+3. **Delete local files** :
+```bash
+rm -rf venv/ tapudsou.sh tapudsou.log tapudsou.err
+
 ```
