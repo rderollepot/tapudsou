@@ -21,8 +21,8 @@ Before proceeding, ensure the following requirements are met :
 The script follows a "set and forget" philosophy :
 
 * **Automated Monitoring** : It runs daily at a scheduled time via a system agent (`launchd` on macOS).
-* **State-of-the-art Security** : Your password is **never stored in plain text**. The script utilizes the `keyring` library to delegate secret storage to your OS-native secure vault (macOS Keychain).
-* **Intelligent Alerts** : It fetches your exact balance from the Innovorder API. If it falls below your chosen threshold, the script triggers a system notification and opens the recharge portal in your browser.
+* **Security** : Your password is **never stored in plain text**. The script utilizes the `keyring` library to delegate secret storage to your OS-native secure vault (macOS Keychain).
+* **Alerts** : It fetches your exact balance from the Innovorder API. If it falls below your chosen threshold, the script triggers a system notification and opens the recharge portal in your browser.
 
 ---
 
@@ -99,6 +99,7 @@ security delete-generic-password -s "tapudsou"
 
 3. **Delete local files** :
 ```bash
-rm -rf venv/ tapudsou.sh tapudsou.log tapudsou.err
+cd ..
+rm -rf tapudsou
 
 ```
