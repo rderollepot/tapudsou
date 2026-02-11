@@ -9,7 +9,7 @@ Before proceeding, ensure the following requirements are met :
 * **Python 3** : This script assumes `python3` is already installed on your system.
 * **Account Activation** : You must have an active account on the Innovorder platform. Instructions provided by [Dupont Restauration](instructions.jpg) are summarized below.
   * **Portal** : [https://ewallet.innovorder.fr/1249/home](https://ewallet.innovorder.fr/1249/home).
-  * **First Login** : Use `firstname.lastname@ara.fr` with the temporary password `12345`.
+  * **First Login** : Use `lastname.firstname@ara.fr` with the temporary password `12345`.
   * **Setup** : Follow the prompts to set your definitive email and personal password.
 
 
