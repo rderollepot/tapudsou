@@ -7,7 +7,7 @@
 Before proceeding, ensure the following requirements are met :
 
 * **Python 3** : This script assumes `python3` is already installed on your system.
-* **Account Activation** : You must have an active account on the Innovorder platform. Instructions provided by [Dupont Restauration](instructions.jpg) are summarized below.
+* **Account Activation** : You must have an active account on the Innovorder platform. Instructions provided by [Dupont Restauration](assets/innovorder_setup_guide.jpg) are summarized below.
   * **Portal** : [https://ewallet.innovorder.fr/1249/home](https://ewallet.innovorder.fr/1249/home).
   * **First Login** : Use `lastname.firstname@ara.fr` with the temporary password `12345`.
   * **Setup** : Follow the prompts to set your definitive email and personal password.
@@ -42,8 +42,12 @@ git checkout macos_launchd
 2. **Run the automated setup** :
 ```bash
 python3 setup.py
-
 ```
+
+> [!NOTE]
+> **macOS Users**: When running the script for the first time, a macOS security popup will appear asking to authorize Python to access your Keychain to securely retrieve your login credentials.
+>
+> ![macOS Keychain Prompt](assets/macos_keychain_prompt.png)
 
 
 3. **Configuration** :
