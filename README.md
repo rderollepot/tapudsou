@@ -109,3 +109,60 @@ cd ..
 rm -rf tapudsou
 
 ```
+
+
+## 6. Troubleshooting
+
+If you encounter issues during installation or execution, check the sections below.
+
+<details>
+<summary><b>ModuleNotFoundError: No module named '_tkinter'</b></summary>
+
+### Problem
+
+This error occurs when your Python distribution does not include the `Tkinter` library (required for the popup window) by default.
+
+You should see something like this in `tapudsou.err`:
+
+```python
+Traceback (most recent call last):
+  File "/Users/johndoe/tapudsou/main.py", line 1, in <module>
+    from tkinter.messagebox import showinfo
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/tkinter/__init__.py", line 38, in <module>
+    import _tkinter # If this fails your Python may not be configured for Tk
+    ^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named '_tkinter'
+
+```
+
+### Fix
+
+You need to install the system-level dependency and refresh your environment:
+
+1. **Install Tkinter via Homebrew**:
+```bash
+brew install python-tk
+
+```
+
+
+2. **Reset the environment**:
+```bash
+# Remove the existing virtual environment
+rm -rf venv
+# Run the setup again to recreate it properly
+python3 setup.py
+
+```
+
+
+
+</details>
+
+<details>
+<summary><b>The script runs but no window appears</b></summary>
+
+* **Check the logs**: Run `cat tapudsou.err` to see if a Python error occurred.
+* **Threshold**: Ensure your balance is actually below the threshold you set during installation.
+
+</details>
