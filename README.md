@@ -44,10 +44,6 @@ git checkout macos_launchd
 python3 setup.py
 ```
 
-> [!NOTE]
-> **macOS Users**: When running the script for the first time, a macOS security popup will appear asking to authorize Python to access your Keychain to securely retrieve your login credentials.
->
-> ![macOS Keychain Prompt](assets/macos_keychain_prompt.png)
 
 
 3. **Configuration** :
@@ -71,6 +67,12 @@ To verify the installation or debug issues without waiting for the next schedule
 launchctl start local.tapudsou
 
 ```
+
+
+> [!NOTE]
+> **macOS Users**: When running the script for the first time, a macOS security popup will appear asking to authorize Python to access your Keychain to securely retrieve your login credentials.
+>
+> ![macOS Keychain Prompt](assets/macos_keychain_prompt.png)
 
 
 * **Check Execution Logs** :
