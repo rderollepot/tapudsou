@@ -3,13 +3,66 @@ import sys
 import platform
 import subprocess
 import getpass
+import shlex
 from abc import ABC, abstractmethod
 from pathlib import Path
+from string import Template
 
 # Global configuration
 SERVICE_ID = "tapudsou"
 APP_NAME = f"local.{SERVICE_ID}"
 BASE_DIR = Path(__file__).parent.absolute()
+
+# Templates
+PLIST_TEMPLATE = Template("""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${label}</string>
+    <key>Program</key>
+    <string>${program}</string>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>${hour}</integer>
+        <key>Minute</key>
+        <integer>${minute}</integer>
+    </dict>
+    <key>WorkingDirectory</key>
+    <string>${workdir}</string>
+    <key>StandardOutPath</key>
+    <string>${log_out}</string>
+    <key>StandardErrorPath</key>
+    <string>${log_err}</string>
+</dict>
+</plist>""")
+
+SYSTEMD_SERVICE_TEMPLATE = Template("""[Unit]
+Description=Tapudsou Lunch Card Monitor
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=${workdir}
+ExecStart=${python_path} ${script_path} ${email} ${threshold}
+Environment=DISPLAY=:0
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus
+
+[Install]
+WantedBy=default.target
+""")
+
+SYSTEMD_TIMER_TEMPLATE = Template("""[Unit]
+Description=Run Tapudsou daily
+
+[Timer]
+OnCalendar=*-*-* ${hour}:${minute}:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+""")
 
 class BaseInstaller(ABC):
     def __init__(self):
@@ -115,10 +168,13 @@ class BaseInstaller(ABC):
     def _set_keyring_password(self, password):
         """Executes a python command in the venv to use keyring."""
         # Using an inline command to avoid depending on an external file
-        cmd = [
-            str(self.venv_python), "-c",
-            f"import keyring; keyring.set_password('{SERVICE_ID}', '{self.email}', '{password}')"
-        ]
+        # Escape quotes for the python script string
+        safe_pass = password.replace("'", "\\'")
+        safe_email = self.email.replace("'", "\\'")
+
+        script = f"import keyring; keyring.set_password('{SERVICE_ID}', '{safe_email}', '{safe_pass}')"
+        cmd = [str(self.venv_python), "-c", script]
+        
         subprocess.run(cmd, check=True)
 
     @abstractmethod
@@ -136,35 +192,21 @@ class MacOSInstaller(BaseInstaller):
         # 1. Creation of the custom shell wrapper
         shell_script = BASE_DIR / f"{SERVICE_ID}.sh"
         # Using the email and threshold collected previously
-        content = f"#!/bin/bash\n{self.venv_python} {BASE_DIR}/main.py {self.email} {self.threshold}\n"
+        content = f"#!/bin/bash\n{shlex.quote(str(self.venv_python))} {shlex.quote(str(BASE_DIR / 'main.py'))} {shlex.quote(self.email)} {self.threshold}\n"
         shell_script.write_text(content)
         shell_script.chmod(0o755)
 
         # 2. Creation of the .plist file
         plist_path = Path.home() / "Library/LaunchAgents" / f"{APP_NAME}.plist"
-        plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>{APP_NAME}</string>
-    <key>Program</key>
-    <string>{shell_script}</string>
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key>
-        <integer>{self.hour}</integer>
-        <key>Minute</key>
-        <integer>{self.minute}</integer>
-    </dict>
-    <key>WorkingDirectory</key>
-    <string>{BASE_DIR}</string>
-    <key>StandardOutPath</key>
-    <string>{BASE_DIR}/{SERVICE_ID}.log</string>
-    <key>StandardErrorPath</key>
-    <string>{BASE_DIR}/{SERVICE_ID}.err</string>
-</dict>
-</plist>"""
+        plist_content = PLIST_TEMPLATE.substitute(
+            label=APP_NAME,
+            program=str(shell_script),
+            hour=int(self.hour),
+            minute=int(self.minute),
+            workdir=str(BASE_DIR),
+            log_out=str(BASE_DIR / f"{SERVICE_ID}.log"),
+            log_err=str(BASE_DIR / f"{SERVICE_ID}.err")
+        )
         plist_path.write_text(plist_content)
 
         # 3. Loading the agent
@@ -187,33 +229,21 @@ class LinuxInstaller(BaseInstaller):
         timer_path = user_systemd_dir / f"{SERVICE_ID}.timer"
 
         # 1. The Service
-        service_content = f"""[Unit]
-Description=Tapudsou Lunch Card Monitor
-After=network.target
-
-[Service]
-Type=oneshot
-WorkingDirectory={BASE_DIR}
-ExecStart={self.venv_python} {BASE_DIR}/main.py {self.email} {self.threshold}
-Environment=DISPLAY=:0
-Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{os.getuid()}/bus
-
-[Install]
-WantedBy=default.target
-"""
+        service_content = SYSTEMD_SERVICE_TEMPLATE.substitute(
+            workdir=str(BASE_DIR),
+            python_path=str(self.venv_python),
+            script_path=str(BASE_DIR / 'main.py'),
+            email=self.email,
+            threshold=self.threshold,
+            uid=os.getuid()
+        )
         service_path.write_text(service_content)
 
         # 2. The Timer
-        timer_content = f"""[Unit]
-Description=Run Tapudsou daily
-
-[Timer]
-OnCalendar=*-*-* {self.hour}:{self.minute}:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-"""
+        timer_content = SYSTEMD_TIMER_TEMPLATE.substitute(
+            hour=self.hour,
+            minute=self.minute
+        )
         timer_path.write_text(timer_content)
 
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
@@ -224,9 +254,7 @@ WantedBy=timers.target
         print(f"\n{self.t('step4')}")
         subprocess.run(["systemctl", "--user", "start", f"{SERVICE_ID}.service"], check=True)
 
-
 class WindowsInstaller(BaseInstaller):
-    """Skeleton for future Windows implementation."""
     def install_scheduler(self):
         print(self.t("win_info"))
         cmd = f"{self.venv_python} {BASE_DIR}/main.py {self.email} {self.threshold}"
