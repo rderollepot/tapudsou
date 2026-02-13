@@ -7,8 +7,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 # Global configuration
-APP_NAME = "local.tapudsou"
 SERVICE_ID = "tapudsou"
+APP_NAME = f"local.{SERVICE_ID}"
 BASE_DIR = Path(__file__).parent.absolute()
 
 class BaseInstaller(ABC):
@@ -134,7 +134,7 @@ class MacOSInstaller(BaseInstaller):
         print(f"\n{self.t('step3_macos')}")
         
         # 1. Creation of the custom shell wrapper
-        shell_script = BASE_DIR / "tapudsou.sh"
+        shell_script = BASE_DIR / f"{SERVICE_ID}.sh"
         # Using the email and threshold collected previously
         content = f"#!/bin/bash\n{self.venv_python} {BASE_DIR}/main.py {self.email} {self.threshold}\n"
         shell_script.write_text(content)
@@ -160,9 +160,9 @@ class MacOSInstaller(BaseInstaller):
     <key>WorkingDirectory</key>
     <string>{BASE_DIR}</string>
     <key>StandardOutPath</key>
-    <string>{BASE_DIR}/tapudsou.log</string>
+    <string>{BASE_DIR}/{SERVICE_ID}.log</string>
     <key>StandardErrorPath</key>
-    <string>{BASE_DIR}/tapudsou.err</string>
+    <string>{BASE_DIR}/{SERVICE_ID}.err</string>
 </dict>
 </plist>"""
         plist_path.write_text(plist_content)
@@ -183,8 +183,8 @@ class LinuxInstaller(BaseInstaller):
         user_systemd_dir = Path.home() / ".config/systemd/user"
         user_systemd_dir.mkdir(parents=True, exist_ok=True)
         
-        service_path = user_systemd_dir / f"{APP_NAME}.service"
-        timer_path = user_systemd_dir / f"{APP_NAME}.timer"
+        service_path = user_systemd_dir / f"{SERVICE_ID}.service"
+        timer_path = user_systemd_dir / f"{SERVICE_ID}.timer"
 
         # 1. The Service
         service_content = f"""[Unit]
@@ -217,12 +217,12 @@ WantedBy=timers.target
         timer_path.write_text(timer_content)
 
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
-        subprocess.run(["systemctl", "--user", "enable", "--now", f"{APP_NAME}.timer"], check=True)
+        subprocess.run(["systemctl", "--user", "enable", "--now", f"{SERVICE_ID}.timer"], check=True)
         print(self.t("linux_configured", hour=self.hour, minute=self.minute))
 
     def run_test(self):
         print(f"\n{self.t('step4')}")
-        subprocess.run(["systemctl", "--user", "start", f"{APP_NAME}.service"], check=True)
+        subprocess.run(["systemctl", "--user", "start", f"{SERVICE_ID}.service"], check=True)
 
 
 class WindowsInstaller(BaseInstaller):
@@ -237,7 +237,15 @@ class WindowsInstaller(BaseInstaller):
 
 def main():
     system = platform.system()
-    installer = MacOSInstaller() if system == "Darwin" else WindowsInstaller()
+    if system == "Darwin":
+        installer = MacOSInstaller()
+    elif system == "Linux":
+        installer = LinuxInstaller()
+    elif system == "Windows":
+        installer = WindowsInstaller()
+    else:
+        print(f"Error: System {system} is not supported yet.")
+        sys.exit(1)
 
     try:
         installer.select_language()
