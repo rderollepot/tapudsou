@@ -23,6 +23,7 @@ class BaseInstaller(ABC):
                 "step1": "--- 1. Environment Preparation ---",
                 "step2": "--- 2. Configuration of your preferences ---",
                 "step3_macos": "--- 3. macOS Agent Installation ---",
+                "step3_linux": "--- 3. Linux Systemd Installation ---",
                 "step4": "--- 4. Launch test ---",
                 "email_prompt": "Email (canteen identifier): ",
                 "pass_prompt": "Password (canteen identifier): ",
@@ -35,12 +36,16 @@ class BaseInstaller(ABC):
                 "win_info": "\n[INFO] Windows Mode: Task Scheduler configuration required (to be implemented).",
                 "win_cmd": "Command to schedule: {cmd}",
                 "success": "\nInstallation completed successfully!",
-                "error": "\n[ERROR] Installation failed: {e}"
+                "error": "\n[ERROR] Installation failed: {e}",
+                "venv_error": "\n[ERROR] Unable to create virtual environment.",
+                "linux_hint": "Try: sudo apt install python3-venv python3-tk",
+                "linux_configured": "Linux service configured for {hour}:{minute}."
             },
             "fr": {
                 "step1": "--- 1. Préparation de l'environnement ---",
                 "step2": "--- 2. Configuration de vos préférences ---",
                 "step3_macos": "--- 3. Installation de l'agent macOS ---",
+                "step3_linux": "--- 3. Installation des unités Systemd (Linux) ---",
                 "step4": "--- 4. Test de lancement ---",
                 "email_prompt": "Email (identifiant cantine) : ",
                 "pass_prompt": "Mot de passe (identifiant cantine) : ",
@@ -53,7 +58,10 @@ class BaseInstaller(ABC):
                 "win_info": "\n[INFO] Mode Windows : Configuration du Planificateur de tâches requise (à implémenter).",
                 "win_cmd": "Commande à planifier : {cmd}",
                 "success": "\nInstallation terminée avec succès !",
-                "error": "\n[ERREUR] Échec de l'installation : {e}"
+                "error": "\n[ERREUR] Échec de l'installation : {e}",
+                "venv_error": "\n[ERREUR] Impossible de créer l'environnement virtuel.",
+                "linux_hint": "Essayez : sudo apt install python3-venv python3-tk",
+                "linux_configured": "Service Linux configuré pour {hour}h{minute}."
             }
         }
         # Shared data collected once
@@ -78,12 +86,18 @@ class BaseInstaller(ABC):
     def setup_venv(self):
         """Creates the environment and installs the necessary libraries."""
         print(self.t("step1"))
-        if not self.venv_dir.exists():
-            subprocess.run([sys.executable, "-m", "venv", str(self.venv_dir)], check=True)
-        
-        # Installation/Update of dependencies (includes keyring and requests)
-        subprocess.run([str(self.venv_python), "-m", "pip", "install", "--upgrade", "pip"], check=True)
-        subprocess.run([str(self.venv_python), "-m", "pip", "install", "-r", "requirements.txt"], check=True)
+        try:
+            if not self.venv_dir.exists():
+                subprocess.run([sys.executable, "-m", "venv", str(self.venv_dir)], check=True)
+            
+            # Installation/Update of dependencies (includes keyring and requests)
+            subprocess.run([str(self.venv_python), "-m", "pip", "install", "--upgrade", "pip"], check=True)
+            subprocess.run([str(self.venv_python), "-m", "pip", "install", "-r", "requirements.txt"], check=True)
+        except subprocess.CalledProcessError:
+            print(self.t("venv_error"))
+            if platform.system() == "Linux":
+                print(self.t("linux_hint"))
+            sys.exit(1)
 
     def collect_info(self):
         """Collects all information at once."""
@@ -162,6 +176,54 @@ class MacOSInstaller(BaseInstaller):
         print(f"\n{self.t('step4')}")
         subprocess.run(["launchctl", "start", APP_NAME], check=True)
         print(self.t("agent_launched"))
+
+class LinuxInstaller(BaseInstaller):
+    def install_scheduler(self):
+        print(f"\n{self.t('step3_linux')}")
+        user_systemd_dir = Path.home() / ".config/systemd/user"
+        user_systemd_dir.mkdir(parents=True, exist_ok=True)
+        
+        service_path = user_systemd_dir / f"{APP_NAME}.service"
+        timer_path = user_systemd_dir / f"{APP_NAME}.timer"
+
+        # 1. The Service
+        service_content = f"""[Unit]
+Description=Tapudsou Lunch Card Monitor
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory={BASE_DIR}
+ExecStart={self.venv_python} {BASE_DIR}/main.py {self.email} {self.threshold}
+Environment=DISPLAY=:0
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{os.getuid()}/bus
+
+[Install]
+WantedBy=default.target
+"""
+        service_path.write_text(service_content)
+
+        # 2. The Timer
+        timer_content = f"""[Unit]
+Description=Run Tapudsou daily
+
+[Timer]
+OnCalendar=*-*-* {self.hour}:{self.minute}:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+"""
+        timer_path.write_text(timer_content)
+
+        subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+        subprocess.run(["systemctl", "--user", "enable", "--now", f"{APP_NAME}.timer"], check=True)
+        print(self.t("linux_configured", hour=self.hour, minute=self.minute))
+
+    def run_test(self):
+        print(f"\n{self.t('step4')}")
+        subprocess.run(["systemctl", "--user", "start", f"{APP_NAME}.service"], check=True)
+
 
 class WindowsInstaller(BaseInstaller):
     """Skeleton for future Windows implementation."""
