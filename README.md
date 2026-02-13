@@ -41,7 +41,7 @@ git checkout macos_launchd
 
 2. **Run the automated setup** :
 ```bash
-python3 setup.py
+python3 -m tapudsou.install
 ```
 
 
@@ -54,7 +54,7 @@ The installer will prompt you for :
 
 
 
-The `setup.py` script automatically creates a virtual environment, installs dependencies, secures your credentials, and registers the macOS background agent.
+The installer automatically creates a virtual environment, installs dependencies, secures your credentials, and registers the background agent for your OS (launchd on macOS, systemd user timer on Linux, or a manual command on Windows).
 
 ---
 
@@ -151,7 +151,7 @@ brew install python-tk
 # Remove the existing virtual environment
 rm -rf venv
 # Run the setup again to recreate it properly
-python3 setup.py
+python3 -m tapudsou.install
 
 ```
 

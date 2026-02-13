@@ -1,20 +1,27 @@
+from __future__ import annotations
+
+"""Cross-platform installer for Tapudsou.
+
+This module is the canonical installer implementation and is intended to be run
+via ``python -m tapudsou.install``.
+"""
+
+from abc import ABC, abstractmethod
+import getpass
 import os
-import sys
 import platform
 import subprocess
-import getpass
-import shlex
-from abc import ABC, abstractmethod
+from typing import Final, Sequence
+
 from pathlib import Path
 from string import Template
+import sys
 
-# Global configuration
-SERVICE_ID = "tapudsou"
-APP_NAME = f"local.{SERVICE_ID}"
-BASE_DIR = Path(__file__).parent.absolute()
+from .config import APP_NAME, BASE_DIR, SERVICE_ID, UserConfig, load_user_config, save_user_config
 
-# Templates
-PLIST_TEMPLATE = Template("""<?xml version="1.0" encoding="UTF-8"?>
+
+PLIST_TEMPLATE: Final[Template] = Template(
+    """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -36,24 +43,28 @@ PLIST_TEMPLATE = Template("""<?xml version="1.0" encoding="UTF-8"?>
     <key>StandardErrorPath</key>
     <string>${log_err}</string>
 </dict>
-</plist>""")
+</plist>"""
+)
 
-SYSTEMD_SERVICE_TEMPLATE = Template("""[Unit]
+SYSTEMD_SERVICE_TEMPLATE: Final[Template] = Template(
+    """[Unit]
 Description=Tapudsou Lunch Card Monitor
 After=network.target
 
 [Service]
 Type=oneshot
 WorkingDirectory=${workdir}
-ExecStart=${python_path} ${script_path} ${email} ${threshold}
+ExecStart=${python_path} -m tapudsou ${email} ${threshold}
 Environment=DISPLAY=:0
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus
 
 [Install]
 WantedBy=default.target
-""")
+"""
+)
 
-SYSTEMD_TIMER_TEMPLATE = Template("""[Unit]
+SYSTEMD_TIMER_TEMPLATE: Final[Template] = Template(
+    """[Unit]
 Description=Run Tapudsou daily
 
 [Timer]
@@ -62,16 +73,21 @@ Persistent=true
 
 [Install]
 WantedBy=timers.target
-""")
+"""
+)
+
 
 class BaseInstaller(ABC):
-    def __init__(self):
-        self.venv_dir = BASE_DIR / "venv"
-        self.venv_python = (
+    """Base class shared by all OS-specific installers."""
+
+    def __init__(self) -> None:
+        self.venv_dir: Path = BASE_DIR / "venv"
+        self.venv_python: Path = (
             self.venv_dir / ("Scripts" if os.name == "nt" else "bin") / "python"
         )
-        self.lang = "en"
-        self.translations = {
+        self.config: UserConfig = load_user_config()
+        self.lang: str = self.config.language
+        self.translations: dict[str, dict[str, str]] = {
             "en": {
                 "step1": "--- 1. Environment Preparation ---",
                 "step2": "--- 2. Configuration of your preferences ---",
@@ -92,7 +108,7 @@ class BaseInstaller(ABC):
                 "error": "\n[ERROR] Installation failed: {e}",
                 "venv_error": "\n[ERROR] Unable to create virtual environment.",
                 "linux_hint": "Try: sudo apt install python3-venv python3-tk",
-                "linux_configured": "Linux service configured for {hour}:{minute}."
+                "linux_configured": "Linux service configured for {hour}:{minute}.",
             },
             "fr": {
                 "step1": "--- 1. Préparation de l'environnement ---",
@@ -114,46 +130,71 @@ class BaseInstaller(ABC):
                 "error": "\n[ERREUR] Échec de l'installation : {e}",
                 "venv_error": "\n[ERREUR] Impossible de créer l'environnement virtuel.",
                 "linux_hint": "Essayez : sudo apt install python3-venv python3-tk",
-                "linux_configured": "Service Linux configuré pour {hour}h{minute}."
-            }
+                "linux_configured": "Service Linux configuré pour {hour}h{minute}.",
+            },
         }
-        # Shared data collected once
-        self.email = None
-        self.threshold = "15.0"
-        self.hour = "10"
-        self.minute = "00"
 
-    def select_language(self):
-        """Allows the user to choose the language."""
-        choice = input("Select language / Choisissez la langue (en/fr) [en]: ").strip().lower()
-        if choice == "fr":
-            self.lang = "fr"
+        self.email: str | None = None
+        self.threshold: str = "15.0"
+        self.hour: str = "10"
+        self.minute: str = "00"
+
+    def select_language(self) -> None:
+        """Allow the user to choose the language."""
+
+        choice = input(
+            "Select language / Choisissez la langue (en/fr) [en]: "
+        ).strip().lower()
+        if choice in {"en", "fr"}:
+            self.lang = choice
         else:
             self.lang = "en"
 
-    def t(self, key, **kwargs):
-        """Helper to get translated strings."""
-        text = self.translations[self.lang].get(key, key)
+        self.config.language = self.lang
+        save_user_config(self.config)
+
+    def t(self, key: str, **kwargs: object) -> str:
+        """Return a translated string for the current language."""
+
+        text = self.translations.get(self.lang, self.translations["en"]).get(key, key)
         return text.format(**kwargs)
 
-    def setup_venv(self):
-        """Creates the environment and installs the necessary libraries."""
+    def setup_venv(self) -> None:
+        """Create the virtual environment and install dependencies."""
+
         print(self.t("step1"))
         try:
             if not self.venv_dir.exists():
-                subprocess.run([sys.executable, "-m", "venv", str(self.venv_dir)], check=True)
-            
-            # Installation/Update of dependencies (includes keyring and requests)
-            subprocess.run([str(self.venv_python), "-m", "pip", "install", "--upgrade", "pip"], check=True)
-            subprocess.run([str(self.venv_python), "-m", "pip", "install", "-r", "requirements.txt"], check=True)
+                subprocess.run(
+                    [sys.executable, "-m", "venv", str(self.venv_dir)],
+                    check=True,
+                )
+
+            subprocess.run(
+                [str(self.venv_python), "-m", "pip", "install", "--upgrade", "pip"],
+                check=True,
+            )
+            requirements_path = BASE_DIR / "requirements.txt"
+            subprocess.run(
+                [
+                    str(self.venv_python),
+                    "-m",
+                    "pip",
+                    "install",
+                    "-r",
+                    str(requirements_path),
+                ],
+                check=True,
+            )
         except subprocess.CalledProcessError:
             print(self.t("venv_error"))
             if platform.system() == "Linux":
                 print(self.t("linux_hint"))
             sys.exit(1)
 
-    def collect_info(self):
-        """Collects all information at once."""
+    def collect_info(self) -> None:
+        """Collect credentials and scheduling preferences."""
+
         print(f"\n{self.t('step2')}")
         self.email = input(self.t("email_prompt")).strip()
         password = getpass.getpass(self.t("pass_prompt"))
@@ -161,42 +202,56 @@ class BaseInstaller(ABC):
         self.hour = input(self.t("hour_prompt")) or "10"
         self.minute = input(self.t("minute_prompt")) or "00"
 
-        # Securely saving the password in the keychain via the venv
         print(self.t("save_pass"))
         self._set_keyring_password(password)
 
-    def _set_keyring_password(self, password):
-        """Executes a python command in the venv to use keyring."""
-        # Using an inline command to avoid depending on an external file
-        # Escape quotes for the python script string
-        safe_pass = password.replace("'", "\\'")
-        safe_email = self.email.replace("'", "\\'")
+    def _set_keyring_password(self, password: str) -> None:
+        """Store the password in the keyring via the virtual environment.
 
-        script = f"import keyring; keyring.set_password('{SERVICE_ID}', '{safe_email}', '{safe_pass}')"
+        The password and email are passed through environment variables to avoid
+        brittle shell escaping.
+        """
+
+        if self.email is None:
+            raise ValueError("Email must be collected before storing the password.")
+
+        env = os.environ.copy()
+        env["TAPUDSOU_EMAIL"] = self.email
+        env["TAPUDSOU_PASSWORD"] = password
+
+        script = (
+            "import os, keyring; "
+            f"keyring.set_password({SERVICE_ID!r}, "
+            "os.environ['TAPUDSOU_EMAIL'], os.environ['TAPUDSOU_PASSWORD'])"
+        )
         cmd = [str(self.venv_python), "-c", script]
-        
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, env=env)
 
     @abstractmethod
-    def install_scheduler(self):
-        pass
+    def install_scheduler(self) -> None:
+        """Install the OS-specific scheduler unit (launchd/systemd/etc.)."""
 
     @abstractmethod
-    def run_test(self):
-        pass
+    def run_test(self) -> None:
+        """Trigger a one-off run of the installed job."""
+
 
 class MacOSInstaller(BaseInstaller):
-    def install_scheduler(self):
+    """Installer implementation for macOS using launchd."""
+
+    def install_scheduler(self) -> None:
         print(f"\n{self.t('step3_macos')}")
-        
-        # 1. Creation of the custom shell wrapper
+
         shell_script = BASE_DIR / f"{SERVICE_ID}.sh"
-        # Using the email and threshold collected previously
-        content = f"#!/bin/bash\n{shlex.quote(str(self.venv_python))} {shlex.quote(str(BASE_DIR / 'main.py'))} {shlex.quote(self.email)} {self.threshold}\n"
-        shell_script.write_text(content)
+        content = (
+            "#!/bin/bash\n"
+            f"cd \"{BASE_DIR}\"\n"
+            f"\"{self.venv_python}\" -m tapudsou "
+            f"\"{self.email}\" {self.threshold}\n"
+        )
+        shell_script.write_text(content, encoding="utf-8")
         shell_script.chmod(0o755)
 
-        # 2. Creation of the .plist file
         plist_path = Path.home() / "Library/LaunchAgents" / f"{APP_NAME}.plist"
         plist_content = PLIST_TEMPLATE.substitute(
             label=APP_NAME,
@@ -205,75 +260,91 @@ class MacOSInstaller(BaseInstaller):
             minute=int(self.minute),
             workdir=str(BASE_DIR),
             log_out=str(BASE_DIR / f"{SERVICE_ID}.log"),
-            log_err=str(BASE_DIR / f"{SERVICE_ID}.err")
+            log_err=str(BASE_DIR / f"{SERVICE_ID}.err"),
         )
-        plist_path.write_text(plist_content)
+        plist_path.write_text(plist_content, encoding="utf-8")
 
-        # 3. Loading the agent
         subprocess.run(["launchctl", "unload", str(plist_path)], capture_output=True)
         subprocess.run(["launchctl", "load", str(plist_path)], check=True)
         print(self.t("sched_enabled", hour=self.hour, minute=self.minute))
 
-    def run_test(self):
+    def run_test(self) -> None:
         print(f"\n{self.t('step4')}")
         subprocess.run(["launchctl", "start", APP_NAME], check=True)
         print(self.t("agent_launched"))
 
+
 class LinuxInstaller(BaseInstaller):
-    def install_scheduler(self):
+    """Installer implementation for Linux using systemd user units."""
+
+    def install_scheduler(self) -> None:
         print(f"\n{self.t('step3_linux')}")
         user_systemd_dir = Path.home() / ".config/systemd/user"
         user_systemd_dir.mkdir(parents=True, exist_ok=True)
-        
+
         service_path = user_systemd_dir / f"{SERVICE_ID}.service"
         timer_path = user_systemd_dir / f"{SERVICE_ID}.timer"
 
-        # 1. The Service
         service_content = SYSTEMD_SERVICE_TEMPLATE.substitute(
             workdir=str(BASE_DIR),
             python_path=str(self.venv_python),
-            script_path=str(BASE_DIR / 'main.py'),
             email=self.email,
             threshold=self.threshold,
-            uid=os.getuid()
+            uid=os.getuid(),
         )
-        service_path.write_text(service_content)
+        service_path.write_text(service_content, encoding="utf-8")
 
-        # 2. The Timer
         timer_content = SYSTEMD_TIMER_TEMPLATE.substitute(
             hour=self.hour,
-            minute=self.minute
+            minute=self.minute,
         )
-        timer_path.write_text(timer_content)
+        timer_path.write_text(timer_content, encoding="utf-8")
 
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
-        subprocess.run(["systemctl", "--user", "enable", "--now", f"{SERVICE_ID}.timer"], check=True)
+        subprocess.run(
+            ["systemctl", "--user", "enable", "--now", f"{SERVICE_ID}.timer"],
+            check=True,
+        )
         print(self.t("linux_configured", hour=self.hour, minute=self.minute))
 
-    def run_test(self):
+    def run_test(self) -> None:
         print(f"\n{self.t('step4')}")
-        subprocess.run(["systemctl", "--user", "start", f"{SERVICE_ID}.service"], check=True)
+        subprocess.run(
+            ["systemctl", "--user", "start", f"{SERVICE_ID}.service"],
+            check=True,
+        )
+
 
 class WindowsInstaller(BaseInstaller):
-    def install_scheduler(self):
+    """Installer stub for Windows.
+
+    A full Task Scheduler integration could be added later without breaking the
+    public API of this class.
+    """
+
+    def install_scheduler(self) -> None:
         print(self.t("win_info"))
-        cmd = f"{self.venv_python} {BASE_DIR}/main.py {self.email} {self.threshold}"
+        cmd = f"\"{self.venv_python}\" -m tapudsou {self.email} {self.threshold}"
         print(self.t("win_cmd", cmd=cmd))
 
-    def run_test(self):
-        pass
+    def run_test(self) -> None:
+        # Nothing to do for now on Windows.
+        return
 
-def main():
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """CLI entrypoint for the installer."""
+
     system = platform.system()
     if system == "Darwin":
-        installer = MacOSInstaller()
+        installer: BaseInstaller = MacOSInstaller()
     elif system == "Linux":
         installer = LinuxInstaller()
     elif system == "Windows":
         installer = WindowsInstaller()
     else:
         print(f"Error: System {system} is not supported yet.")
-        sys.exit(1)
+        return 1
 
     try:
         installer.select_language()
@@ -282,9 +353,12 @@ def main():
         installer.install_scheduler()
         installer.run_test()
         print(installer.t("success"))
-    except Exception as e:
-        print(installer.t("error", e=e))
-        sys.exit(1)
+        return 0
+    except Exception as exc:  # pragma: no cover - defensive wrapper
+        print(installer.t("error", e=exc))
+        return 1
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
+
